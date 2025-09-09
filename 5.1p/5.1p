@@ -1,0 +1,45 @@
+from tkinter import *
+import tkinter.font
+from gpiozero import LED
+
+# Hardware setup
+red_led = LED(14)      
+white_led = LED(15)
+blue_led = LED(17)
+
+# GUI setup
+win = Tk()
+win.title("LED Toggler")
+myFont = tkinter.font.Font(family='Helvetica', size=12, weight='bold')
+
+def select_led():
+    choice = led_var.get()
+    red_led.off()
+    white_led.off()
+    blue_led.off()
+    if choice == "Red":
+        red_led.on()
+    elif choice == "White":
+        white_led.on()
+    elif choice == "Blue":
+        blue_led.on()
+
+led_var = StringVar()
+led_var.set(None)
+
+red_radio = Radiobutton(win, text="Red LED", variable=led_var, value="Red",
+                        font=myFont, command=select_led)
+red_radio.grid(row=0, column=0, padx=10, pady=10)
+
+white_radio = Radiobutton(win, text="White LED", variable=led_var, value="White",
+                          font=myFont, command=select_led)
+white_radio.grid(row=0, column=1, padx=10, pady=10)
+
+blue_radio = Radiobutton(win, text="Blue LED", variable=led_var, value="Blue",
+                         font=myFont, command=select_led)
+blue_radio.grid(row=0, column=2, padx=10, pady=10)
+
+exit_button = Button(win, text="Exit", font=myFont, command=win.destroy)
+exit_button.grid(row=1, column=1, pady=20)
+
+win.mainloop()
