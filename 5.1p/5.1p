@@ -1,45 +1,49 @@
-from tkinter import *
-import tkinter.font
-from gpiozero import LED
+from tkinter import *;
+import tkinter.font ;
+import RPI.GPIO as GPIO;
+import time;
 
-# Hardware setup
-red_led = LED(14)      
-white_led = LED(15)
-blue_led = LED(17)
+GPIO.setborad(GPIO.board);
+GPIO.setup(11,GPIO.out);
+GPIO.setup(12,GPIO.out);
+GPIO.setup(13,GPIO.out);
 
-# GUI setup
-win = Tk()
-win.title("LED Toggler")
-myFont = tkinter.font.Font(family='Helvetica', size=12, weight='bold')
+win = TK();
+win.title("Led Blinker through raspberry pi");
+myfont= tkinter.font.Font(
+       family = 'Arial',
+        size = 12,
+        weight = "bold",
+    )
+def selected_led():
+    
+    option= led_var.get()
+    GPIO.output(11,GPIO.HIGH)
+    GPIO.output(12,GPIO.HIGH)
+    GPIO.output(13,GPIO.HIGH)
 
-def select_led():
-    choice = led_var.get()
-    red_led.off()
-    white_led.off()
-    blue_led.off()
-    if choice == "Red":
-        red_led.on()
-    elif choice == "White":
-        white_led.on()
-    elif choice == "Blue":
-        blue_led.on()
+    if option == "Red":
+        GPIO.output(11,GPIO.LOW);
+    elif option == "Green":
+        GPIO.output(12,GPIO.LOW);
+    elif option == "Red-2":
+        GPIO.output(13,GPIO.LOW);
+    def close():
+        win.quit();
+        win.distroy;
+        GPIO.cleanup;    
 
-led_var = StringVar()
-led_var.set(None)
 
-red_radio = Radiobutton(win, text="Red LED", variable=led_var, value="Red",
-                        font=myFont, command=select_led)
-red_radio.grid(row=0, column=0, padx=10, pady=10)
+led_var = StringVar();
+led_var.set(none);
 
-white_radio = Radiobutton(win, text="White LED", variable=led_var, value="White",
-                          font=myFont, command=select_led)
-white_radio.grid(row=0, column=1, padx=10, pady=10)
+red = Radiabutton(win,variable = led_var ,option = "Red", font = myfont, command = selected_led)
+red.grid(row = 0, column =0 )
+green = Radiabutton(win,variable = led_var ,option = "Green", font = myfont, command = selected_led)
+green.grid(row = 1, column =0 )
+red2 = Radiabutton(win,variable = led_var ,option = "Red-1", font = myfont, command = selected_led)
+red2.grid(row = 2, column =0 )
+exit = Button(win, font = myfont, command = close, bg = 'grey', height= 1, width = 10)
+exit.grid(row = 0, column =0 )
 
-blue_radio = Radiobutton(win, text="Blue LED", variable=led_var, value="Blue",
-                         font=myFont, command=select_led)
-blue_radio.grid(row=0, column=2, padx=10, pady=10)
-
-exit_button = Button(win, text="Exit", font=myFont, command=win.destroy)
-exit_button.grid(row=1, column=1, pady=20)
-
-win.mainloop()
+mainloop();
