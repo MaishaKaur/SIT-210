@@ -1,0 +1,164 @@
+#include <WiFiNINA.h>        // Library for WiFi functionality 
+#include <PubSubClient.h>    // MQTT client library
+
+// WiFi credentials
+const char* ssid = "IBN-B";        
+const char* password = "CUPunjab";  
+
+// MQTT broker settings - using public Mosquitto test broker
+const char* mqttServer = "test.mosquitto.org";  
+const int mqttPort = 1883;                      // Standard non-secure MQTT port
+const char* topic = "SIT210/wave";              // MQTT topic to publish/subscribe to
+
+// Pin definitions
+const int trigPin = 6;  
+const int echoPin = 8;  
+const int ledPin = 3;   
+
+// Ultrasonic sensor variables
+long duration;                          // Stores the echo pulse duration
+int distance;                           // Stores calculated distance in cm
+const int detectionThreshold = 20;      // Detection range threshold (in cm) to register a "wave"
+
+// MQTT client objects
+WiFiClient wifiClient;                  // WiFi client object
+PubSubClient client(wifiClient);        // MQTT client using WiFi connection
+
+// SETUP 
+void setup() {
+  Serial.begin(9600);  
+  
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
+  pinMode(ledPin, OUTPUT);
+  digitalWrite(ledPin, LOW); // Made sure LED is off initially
+    
+  // Connect to WiFi
+  connectToWiFi();
+  
+  // Configure MQTT broker and callback
+  client.setServer(mqttServer, mqttPort);
+  client.setCallback(callback);
+  
+  // Connect to MQTT broker
+  connectToMQTT();
+}
+
+// MAIN LOOP
+void loop() {
+  // Ensure MQTT connection stays active
+  if (!client.connected()) {
+    connectToMQTT();
+  }
+  client.loop(); // Process incoming messages
+  
+  // Continuously check if a wave is detected
+  checkForWave();
+  
+  delay(100); // Small delay 
+}
+
+// WIFI CONNECTION 
+void connectToWiFi() {
+  Serial.print("Connecting to WiFi");
+  WiFi.begin(ssid, password);
+  
+  // Wait until connection is established
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  
+  Serial.println("\nConnected to WiFi!");
+}
+
+//  MQTT CONNECTION 
+void connectToMQTT() {
+  while (!client.connected()) {
+    Serial.print("Connecting to MQTT...");
+    
+    // Attempt to connect with a client ID
+    if (client.connect("ArduinoWaveClient")) {
+      Serial.println("connected!");
+      client.subscribe(topic);  // Subscribe to topic after connection
+    } else {
+      Serial.print("failed, rc=");
+      Serial.print(client.state()); // Print error code
+      Serial.println(" retrying in 5 seconds");
+      delay(5000); // Retry after 5 seconds
+    }
+  }
+}
+
+// CALLBACK FUNCTION
+// Handles incoming MQTT messages
+void callback(char* topic, byte* payload, unsigned int length) {
+  // Convert the payload (byte array) into a readable string
+  String message;
+  for (int i = 0; i < length; i++) {
+    message += (char)payload[i];
+  }
+  
+  // Debug: print received message
+  Serial.print("Message arrived on topic: ");
+  Serial.println(topic);
+  Serial.print("Message: ");
+  Serial.println(message);
+
+  // If the message contains the word "pat", flash LED quickly 5 times
+  if (message.indexOf("pat") >= 0) {
+    Serial.println("Pat command received! Flashing LED 5 times quickly.");
+    for (int i = 0; i < 5; i++) {
+      digitalWrite(ledPin, HIGH);
+      delay(500); // LED on for 500ms
+      digitalWrite(ledPin, LOW);
+      delay(500); // LED off for 500ms
+    }
+  } else {
+    // Otherwise, flash LED 3 times at a slower pace
+    Serial.println("Standard message received. Flashing LED 3 times.");
+    for (int i = 0; i < 3; i++) {
+      digitalWrite(ledPin, HIGH);
+      delay(200); // LED on for 200ms
+      digitalWrite(ledPin, LOW);
+      delay(200); // LED off for 200ms
+    }
+  }
+}
+
+// WAVE DETECTION 
+void checkForWave() {
+  // Clear the trigger pin
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  
+  // Send a 10us HIGH pulse to trigger ultrasonic sensor
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+  
+  // Read echo pin,duration of sound wave round trip (in microseconds)
+  duration = pulseIn(echoPin, HIGH);
+  
+  // Calculate distance (cm) using speed of sound (0.034 cm/us), divided by 2 for round trip
+  distance = duration * 0.034 / 2;
+  
+  // If object is within detection threshold -> register a "wave"
+  if (distance > 0 && distance < detectionThreshold) {
+    Serial.println("Wave detected!");
+    Serial.print("Distance: ");
+    Serial.println(distance);
+    
+    // Publish a message to the MQTT broker
+    String message = "Wave from Maisha";  
+    client.publish(topic, message.c_str());
+    
+    // Flash LED once as confirmation
+    digitalWrite(ledPin, HIGH);
+    delay(500);
+    digitalWrite(ledPin, LOW);
+    
+    // Delay to prevent multiple detections from one wave
+    delay(1000);
+  }
+}
