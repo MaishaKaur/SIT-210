@@ -1,0 +1,52 @@
+import speech_recognition as sr
+import RPi.GPIO as GPIO
+import time
+
+# GPIO setup
+LED_PIN = 17
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(LED_PIN, GPIO.OUT)
+GPIO.output(LED_PIN, GPIO.LOW)
+
+r = sr.Recognizer()
+mic = sr.Microphone()
+
+def listen_for_command():
+    with mic as source:
+        print("Adjusting for ambient noise...")
+        r.adjust_for_ambient_noise(source)
+        print("Listening for command...")
+        audio = r.listen(source)
+
+    try:
+        command = r.recognize_google(audio).lower()
+        print(f"You said: {command}")
+        return command
+    except sr.UnknownValueError:
+        print("Could not understand audio")
+    except sr.RequestError:
+        print("API unavailable")
+
+    return ""
+
+def control_led(command):
+    if "light on" in command or "turn on" in command or "led on" in command:
+        GPIO.output(LED_PIN, GPIO.HIGH)
+        print("LED turned ON")
+    elif "light off" in command or "turn off" in command or "led off" in command:
+        GPIO.output(LED_PIN, GPIO.LOW)
+        print("LED turned OFF")
+    else:
+        print("No valid command detected")
+
+try:
+    while True:
+        cmd = listen_for_command()
+        control_led(cmd)
+        time.sleep(1)
+
+except KeyboardInterrupt:
+    print("Exiting program...")
+
+finally:
+    GPIO.cleanup()
