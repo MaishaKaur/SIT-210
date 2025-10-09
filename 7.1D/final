@@ -1,0 +1,56 @@
+# //this library is used for converting speech into texts 
+import speech_recognition as sr
+# this library is used for controlling GPIO pins of respberry pi
+import RPi.GPIO as GPIO
+#used for time delay
+import time
+
+# GPIO setup
+LED_PIN = 17#led is connected to GPIO pin number 17
+GPIO.setmode(GPIO.BCM)# tells the syystem that we are using pins on teh basis of bcm numbering system
+GPIO.setup(LED_PIN, GPIO.OUT)#set pin 17 as output
+GPIO.output(LED_PIN, GPIO.LOW)# led will be off at the initial state 
+
+r = sr.Recognizer()# recognizer is an object which will convert the text into audio
+mic = sr.Microphone()#sets the default microphone for use
+
+def listen_for_command():#this function will listen to the voice commands and convert it into text
+    with mic as source:#microphone is used as input source
+        print("Adjusting for ambient noise...")
+        r.adjust_for_ambient_noise(source)#adjusting microphone so taht it can understand the  background noise 
+        print("Listening for command...")
+        audio = r.listen(source)#now it is listening user's voice and storing the audio
+
+    try:
+        command = r.recognize_google(audio).lower()#it is converting audio into text by google speech recoginisation in lower case
+        print(f"You said: {command}")
+        return command
+    except sr.UnknownValueError:#if teh voice isn't clear or the system could not clearly detect the voice then a messaage will be printed
+        print("Could not understand audio")
+    except sr.RequestError:#if google API was not accessed then there will be this error
+        print("API unavailable")
+
+    return ""#if there is some issue in voice hearing or the system tehn this empty string will be returned
+
+def control_led(command):#this function will check the voice command and toggles the led
+    if "light on" in command or "turn on" in command or "led on" in command:#if the user gives command such as light on, turn on or led on then led will be turned on
+        GPIO.output(LED_PIN, GPIO.HIGH)
+        print("LED turned ON")
+    elif "light off" in command or "turn off" in command or "led off" in command:#if the user says led off tehn the led will be turned off
+        GPIO.output(LED_PIN, GPIO.LOW)
+        print("LED turned OFF")
+    else:#if the command is totally mismatched from the above listed two commands then this message will be printed 
+        print("No valid command detected")
+
+try:
+    while True:#this is an infinite loop which will listen to voice commands again and again
+        #led is controlled by voice command and a 1 second gap is given 
+        cmd = listen_for_command()
+        control_led(cmd)
+        time.sleep(1)
+
+except KeyboardInterrupt:#if the user presses ctrl + c then the program is safely ended
+    print("Exiting program...")
+
+finally:
+    GPIO.cleanup()#GPIO pins are reset so that here should be less chances of error in future
