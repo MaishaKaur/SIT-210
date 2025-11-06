@@ -1,84 +1,48 @@
-import os
-import sys
-import argparse
-import glob
-import time
+# --- Smart Glasses Main Program ---
+# YOLOX11n + pyttsx3 voice + serial data from Arduino
+
 import cv2
-import numpy as np
+import time
+import serial
 import pyttsx3
 from ultralytics import YOLO
 
-# =============================
-# Argument parsing (same as original)
-# =============================
-parser = argparse.ArgumentParser()
-parser.add_argument('--model', required=True)
-parser.add_argument('--source', required=True)
-parser.add_argument('--thresh', default=0.5)
-parser.add_argument('--resolution', default=None)
-parser.add_argument('--record', action='store_true')
-args = parser.parse_args()
+# ==========================================
+# CONFIGURATION
+# ==========================================
+MODEL_PATH = "yolox11n.pt"      # change if different
+SERIAL_PORT = "/dev/ttyUSB0"    # adjust if /dev/ttyACM0
+BAUD_RATE = 9600
+VOICE_RATE = 175
+SPEECH_INTERVAL = 1.5           # seconds between announcements
+CONF_THRESH = 0.5
 
-# =============================
-# Setup
-# =============================
-model_path = args.model
-img_source = args.source
-min_thresh = float(args.thresh)
-user_res = args.resolution
-record = args.record
+print("[INFO] Initializing system...")
 
-if not os.path.exists(model_path):
-    print('ERROR: Model path is invalid.')
-    sys.exit(0)
+# ==========================================
+# SERIAL CONNECTION
+# ==========================================
+try:
+    ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
+    time.sleep(2)
+    arduino_connected = True
+    print("Arduino connected via USB.")
+except:
+    ser = None
+    arduino_connected = False
+    print("Arduino not detected. Running camera + voice only.")
 
-model = YOLO(model_path, task='detect')
+# ==========================================
+# YOLO + VOICE SETUP
+# ==========================================
+model = YOLO(MODEL_PATH)
 labels = model.names
 
-# =============================
-# Source setup (same as original)
-# =============================
-img_ext_list = ['.jpg','.JPG','.jpeg','.JPEG','.png','.PNG','.bmp','.BMP']
-vid_ext_list = ['.avi','.mov','.mp4','.mkv','.wmv']
-
-if os.path.isdir(img_source):
-    source_type = 'folder'
-elif os.path.isfile(img_source):
-    _, ext = os.path.splitext(img_source)
-    if ext in img_ext_list:
-        source_type = 'image'
-    elif ext in vid_ext_list:
-        source_type = 'video'
-    else:
-        print(f'File extension {ext} not supported.')
-        sys.exit(0)
-elif 'usb' in img_source:
-    source_type = 'usb'
-    usb_idx = int(img_source[3:])
-elif 'picamera' in img_source:
-    source_type = 'picamera'
-    picam_idx = int(img_source[8:])
-else:
-    print(f'Invalid source: {img_source}')
-    sys.exit(0)
-
-# =============================
-# Resolution setup
-# =============================
-resize = False
-if user_res:
-    resize = True
-    resW, resH = int(user_res.split('x')[0]), int(user_res.split('x')[1])
-
-# =============================
-# Voice setup
-# =============================
 engine = pyttsx3.init()
-engine.setProperty('rate', 175)
+engine.setProperty('rate', VOICE_RATE)
 engine.setProperty('volume', 1.0)
-last_spoken = time.time()
+last_spoken = 0
 last_message = ""
-SPEECH_INTERVAL = 1.5
 
 def speak(text):
     global last_spoken, last_message
@@ -89,43 +53,24 @@ def speak(text):
         last_spoken = now
         last_message = text
 
-# =============================
-# Input source handling
-# =============================
-if source_type == 'image':
-    imgs_list = [img_source]
-elif source_type == 'folder':
-    imgs_list = [f for f in glob.glob(img_source + '/*') if os.path.splitext(f)[1] in img_ext_list]
-elif source_type in ['video', 'usb']:
-    cap = cv2.VideoCapture(img_source if source_type == 'video' else int(img_source[3:]))
-    if user_res:
-        cap.set(3, resW)
-        cap.set(4, resH)
-elif source_type == 'picamera':
-    from picamera2 import Picamera2
-    cap = Picamera2()
-    cap.configure(cap.create_video_configuration(main={"format": 'XRGB8888', "size": (resW, resH)}))
-    cap.start()
+# ==========================================
+# CAMERA SETUP
+# ==========================================
+cap = cv2.VideoCapture(0)
+if not cap.isOpened():
+    print("ERROR: Cannot access camera.")
+    exit()
 
-# =============================
-# Detection Loop
-# =============================
-print("[INFO] Starting real-time detection with voice output...")
+print("[INFO] Starting real-time detection... Press 'q' to stop.")
 
+# ==========================================
+# MAIN LOOP
+# ==========================================
 while True:
-    if source_type in ['video', 'usb', 'picamera']:
-        ret, frame = cap.read() if source_type != 'picamera' else (True, cv2.cvtColor(cap.capture_array(), cv2.COLOR_BGRA2BGR))
-        if not ret or frame is None:
-            print("[WARN] No frame received, exiting.")
-            break
-    else:
-        if len(imgs_list) == 0:
-            print("No images found.")
-            break
-        frame = cv2.imread(imgs_list.pop(0))
-
-    if resize:
-        frame = cv2.resize(frame, (resW, resH))
+    ret, frame = cap.read()
+    if not ret:
+        print("[WARN] No frame received.")
+        break
 
     results = model(frame, verbose=False)
     detections = results[0].boxes
@@ -134,7 +79,7 @@ while True:
 
     for det in detections:
         conf = det.conf.item()
-        if conf < min_thresh:
+        if conf < CONF_THRESH:
             continue
         clsid = int(det.cls.item())
         label = labels[clsid]
@@ -142,6 +87,7 @@ while True:
         xmin, ymin, xmax, ymax = xyxy.astype(int)
         center_x = (xmin + xmax) // 2
 
+        # Determine left/center/right
         if center_x < w / 3:
             pos = "left"
         elif center_x > 2 * w / 3:
@@ -158,10 +104,23 @@ while True:
     else:
         speak("clear path ahead")
 
-    key = cv2.waitKey(1)
-    if key == ord('q'):
+    # Distance data from Arduino
+    if arduino_connected and ser.in_waiting > 0:
+        line = ser.readline().decode('utf-8').strip()
+        if line.isdigit():
+            distance = int(line)
+            print(f"Distance: {distance} cm")
+            if distance < 30:
+                speak("Warning, obstacle very close")
+
+    if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
-if source_type in ['video', 'usb']:
-    cap.release()
+# ==========================================
+# CLEANUP
+# ==========================================
+cap.release()
 cv2.destroyAllWindows()
+if arduino_connected:
+    ser.close()
+print("[INFO] System shut down cleanly.")
