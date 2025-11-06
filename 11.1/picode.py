@@ -1,5 +1,8 @@
-# --- Smart Glasses Main Program ---
-# YOLOX11n + pyttsx3 voice + serial data from Arduino
+# --- Raspberry Pi Code for Smart Glasses ---
+# Purpose:
+#   1. Run YOLOv11 (Nano model) to detect objects in real-time using the Pi camera.
+#   2. Use Arduino's ultrasonic distance readings if connected.
+#   3. Give spoken feedback to the user via text-to-speech (pyttsx3).
 
 import cv2
 import time
@@ -8,43 +11,47 @@ import pyttsx3
 from ultralytics import YOLO
 
 # ==========================================
-# CONFIGURATION
+# CONFIGURATION SECTION
 # ==========================================
-MODEL_PATH = "yolox11n.pt"      # change if different
-SERIAL_PORT = "/dev/ttyUSB0"    # adjust if /dev/ttyACM0
-BAUD_RATE = 9600
-VOICE_RATE = 175
-SPEECH_INTERVAL = 1.5           # seconds between announcements
-CONF_THRESH = 0.5
+MODEL_PATH = "yolox11n.pt"      # Pretrained YOLOv11 Nano model file
+SERIAL_PORT = "/dev/ttyUSB0"    # USB port where Arduino is connected
+BAUD_RATE = 9600                # Communication speed (must match Arduino)
+VOICE_RATE = 175                # Speech rate for voice output
+SPEECH_INTERVAL = 1.5           # Minimum time gap between spoken messages
+CONF_THRESH = 0.5               # Minimum confidence score for YOLO detections
 
-print("[INFO] Initializing system...")
+print("[INFO] Booting Smart Glasses System...")
 
 # ==========================================
-# SERIAL CONNECTION
+# CONNECT TO ARDUINO (OPTIONAL)
 # ==========================================
 try:
+    # Try to open a serial connection to Arduino
     ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
-    time.sleep(2)
+    time.sleep(2)  # Wait for Arduino to initialize
     arduino_connected = True
-    print("Arduino connected via USB.")
+    print("✅ Arduino detected (distance integration active).")
 except:
+    # If Arduino is not connected, continue with only YOLO
     ser = None
     arduino_connected = False
-    print("Arduino not detected. Running camera + voice only.")
+    print("⚠️ No Arduino detected — running YOLO + voice only.")
 
 # ==========================================
-# YOLO + VOICE SETUP
+# LOAD YOLO MODEL AND SETUP VOICE ENGINE
 # ==========================================
-model = YOLO(MODEL_PATH)
-labels = model.names
+model = YOLO(MODEL_PATH)        # Load YOLOv11 Nano model for object detection
+labels = model.names            # Retrieve object class labels (e.g., person, car)
 
+# Initialize text-to-speech engine
 engine = pyttsx3.init()
 engine.setProperty('rate', VOICE_RATE)
 engine.setProperty('volume', 1.0)
-last_spoken = 0
-last_message = ""
+last_spoken = 0                 # Last time something was spoken
+last_message = ""               # Store previous message to avoid repetition
 
 def speak(text):
+    """Speak only if enough time passed and message changed"""
     global last_spoken, last_message
     now = time.time()
     if now - last_spoken > SPEECH_INTERVAL and text != last_message:
@@ -54,40 +61,43 @@ def speak(text):
         last_message = text
 
 # ==========================================
-# CAMERA SETUP
+# INITIALIZE CAMERA
 # ==========================================
-cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture(0)       # Open default Pi camera
 if not cap.isOpened():
-    print("ERROR: Cannot access camera.")
+    print("❌ ERROR: Cannot access camera.")
     exit()
 
-print("[INFO] Starting real-time detection... Press 'q' to stop.")
+print("[INFO] Detection running... Press 'q' to quit.")
 
 # ==========================================
 # MAIN LOOP
 # ==========================================
 while True:
+    # --- Capture frame from camera ---
     ret, frame = cap.read()
     if not ret:
-        print("[WARN] No frame received.")
-        break
+        continue  # Skip if frame not captured
 
+    # --- Run YOLO detection on the frame ---
     results = model(frame, verbose=False)
     detections = results[0].boxes
     h, w, _ = frame.shape
-    positions = []
+    positions = []  # Store text messages for each detection
 
+    # --- Loop through detected objects ---
     for det in detections:
-        conf = det.conf.item()
+        conf = det.conf.item()             # Confidence score
         if conf < CONF_THRESH:
-            continue
-        clsid = int(det.cls.item())
-        label = labels[clsid]
+            continue                       # Ignore low-confidence detections
+
+        clsid = int(det.cls.item())        # Class ID
+        label = labels[clsid]              # Class name (e.g. "person")
         xyxy = det.xyxy.cpu().numpy().squeeze()
         xmin, ymin, xmax, ymax = xyxy.astype(int)
-        center_x = (xmin + xmax) // 2
+        center_x = (xmin + xmax) // 2      # Center X coordinate of object
 
-        # Determine left/center/right
+        # Determine which side of the frame object is on
         if center_x < w / 3:
             pos = "left"
         elif center_x > 2 * w / 3:
@@ -97,30 +107,38 @@ while True:
 
         positions.append(f"{label} on your {pos}")
 
+    # --- Voice output for detections ---
     if positions:
         message = ", ".join(positions)
-        print("[INFO]", message)
         speak(message)
     else:
         speak("clear path ahead")
 
-    # Distance data from Arduino
+    # ==========================================
+    # READ DISTANCE DATA FROM ARDUINO
+    # ==========================================
     if arduino_connected and ser.in_waiting > 0:
+        # Read incoming data from Arduino (distance in cm)
         line = ser.readline().decode('utf-8').strip()
         if line.isdigit():
             distance = int(line)
             print(f"Distance: {distance} cm")
-            if distance < 30:
-                speak("Warning, obstacle very close")
 
+            # If an object is too close, warn the user
+            if distance < 25:
+                speak("Warning, object too close in front")
+
+    # --- Exit when 'q' key is pressed ---
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
 # ==========================================
 # CLEANUP
 # ==========================================
-cap.release()
-cv2.destroyAllWindows()
+cap.release()                    # Release camera
+cv2.destroyAllWindows()          # Close all OpenCV windows
+
 if arduino_connected:
-    ser.close()
-print("[INFO] System shut down cleanly.")
+    ser.close()                  # Close serial port if used
+
+print("[INFO] System stopped cleanly.")
