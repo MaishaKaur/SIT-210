@@ -30,12 +30,12 @@ try:
     ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
     time.sleep(2)  # Wait for Arduino to initialize
     arduino_connected = True
-    print("✅ Arduino detected (distance integration active).")
+    print("Arduino detected (distance integration active).")
 except:
     # If Arduino is not connected, continue with only YOLO
     ser = None
     arduino_connected = False
-    print("⚠️ No Arduino detected — running YOLO + voice only.")
+    print("No Arduino detected — running YOLO + voice only.")
 
 # ==========================================
 # LOAD YOLO MODEL AND SETUP VOICE ENGINE
@@ -65,7 +65,7 @@ def speak(text):
 # ==========================================
 cap = cv2.VideoCapture(0)       # Open default Pi camera
 if not cap.isOpened():
-    print("❌ ERROR: Cannot access camera.")
+    print("ERROR: Cannot access camera.")
     exit()
 
 print("[INFO] Detection running... Press 'q' to quit.")
